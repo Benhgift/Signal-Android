@@ -31,6 +31,8 @@ public class GcmBroadcastReceiver extends WakefulBroadcastReceiver implements In
 
   private static final String TAG = GcmBroadcastReceiver.class.getSimpleName();
 
+  private static int activeCount = 0;
+
   @Inject SignalServiceMessageReceiver messageReceiver;
 
   @Override
@@ -62,6 +64,11 @@ public class GcmBroadcastReceiver extends WakefulBroadcastReceiver implements In
   }
 
   private void handleReceivedNotification(Context context) {
+    if (!incrementActiveGcmCount()) {
+      Log.i(TAG, "Skipping GCM processing -- there's already one enqueued.");
+      return;
+    }
+
     TextSecurePreferences.setNeedsMessagePull(context, true);
 
     long          startTime    = System.currentTimeMillis();
@@ -92,6 +99,8 @@ public class GcmBroadcastReceiver extends WakefulBroadcastReceiver implements In
                             .getJobManager()
                             .add(new PushNotificationReceiveJob(context));
         } finally {
+          decrementActiveGcmCount();
+
           synchronized (foregroundLock) {
             if (foregroundRunning.getAndSet(false)) {
               GenericForegroundService.stopForegroundTask(context);
@@ -120,5 +129,17 @@ public class GcmBroadcastReceiver extends WakefulBroadcastReceiver implements In
         }
       }.start();
     }
+  }
+
+  private static synchronized boolean incrementActiveGcmCount() {
+    if (activeCount < 2) {
+      activeCount++;
+      return true;
+    }
+    return false;
+  }
+
+  private static synchronized void decrementActiveGcmCount() {
+    activeCount--;
   }
 }
